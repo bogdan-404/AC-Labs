@@ -35,6 +35,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Require GCP_PROJECT_ID secret
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        run: |
+          if [ -z "$GCP_PROJECT_ID" ]; then
+            echo "::error::Add repository secret GCP_PROJECT_ID (e.g. ac-labs-492118). Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+          echo "GCP_PROJECT_ID=$GCP_PROJECT_ID" >> "$GITHUB_ENV"
+
       - name: Auth to Google Cloud
         uses: google-github-actions/auth@v2
         with:
@@ -45,11 +55,12 @@ jobs:
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
 
-      # Non-interactive: enables APIs (needs Service Usage Admin on the SA, or enable once in Console).
+      - name: Set gcloud project (avoids empty default)
+        run: gcloud config set project "$GCP_PROJECT_ID"
+
+      # Non-interactive: needs Service Usage Admin on the SA, or enable APIs once in Console.
       - name: Enable Artifact Registry & Cloud Run APIs
-        run: |
-          gcloud services enable artifactregistry.googleapis.com run.googleapis.com \
-            --project="${{ secrets.GCP_PROJECT_ID }}"
+        run: gcloud services enable artifactregistry.googleapis.com run.googleapis.com
 
       - name: Artifact Registry (create if missing)
         run: |
@@ -62,7 +73,7 @@ jobs:
 
       - name: Build & push backend image
         run: |
-          REG="${{ env.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.AR_REPO }}"
+          REG="${{ env.REGION }}-docker.pkg.dev/${GCP_PROJECT_ID}/${{ env.AR_REPO }}"
           IMG="$REG/backend:${{ github.sha }}"
           docker build -t "$IMG" ./backend
           docker push "$IMG"
@@ -93,7 +104,7 @@ jobs:
 
       - name: Build & push frontend image
         run: |
-          REG="${{ env.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.AR_REPO }}"
+          REG="${{ env.REGION }}-docker.pkg.dev/${GCP_PROJECT_ID}/${{ env.AR_REPO }}"
           IMG="$REG/frontend:${{ github.sha }}"
           docker build \
             --build-arg "VITE_API_BASE=${{ steps.backend.outputs.url }}" \
