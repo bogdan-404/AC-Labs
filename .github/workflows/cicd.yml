@@ -45,6 +45,12 @@ jobs:
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
 
+      # Non-interactive: enables APIs (needs Service Usage Admin on the SA, or enable once in Console).
+      - name: Enable Artifact Registry & Cloud Run APIs
+        run: |
+          gcloud services enable artifactregistry.googleapis.com run.googleapis.com \
+            --project="${{ secrets.GCP_PROJECT_ID }}"
+
       - name: Artifact Registry (create if missing)
         run: |
           gcloud artifacts repositories describe ${{ env.AR_REPO }} --location=${{ env.REGION }} \
