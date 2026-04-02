@@ -92,12 +92,20 @@ jobs:
             --image "$BACKEND_IMAGE" \
             --region ${{ env.REGION }} \
             --platform managed \
-            --allow-unauthenticated \
+            --no-invoker-iam-check \
             --port 8080 \
             --cpu 1 \
             --memory 1Gi \
             --cpu-boost \
-            --set-env-vars "^##^SPRING_DATASOURCE_URL=${SPRING_DATASOURCE_URL}##^SPRING_DATASOURCE_USERNAME=${SPRING_DATASOURCE_USERNAME}##^SPRING_DATASOURCE_PASSWORD=${SPRING_DATASOURCE_PASSWORD}##^JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=75.0"
+            --set-env-vars "^##^SPRING_PROFILES_ACTIVE=cloudrun##^SPRING_DATASOURCE_URL=${SPRING_DATASOURCE_URL}##^SPRING_DATASOURCE_USERNAME=${SPRING_DATASOURCE_USERNAME}##^SPRING_DATASOURCE_PASSWORD=${SPRING_DATASOURCE_PASSWORD}##^JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=75.0"
+
+      - name: Allow unauthenticated invoker (backend)
+        run: |
+          gcloud run services add-iam-policy-binding ${{ env.BACKEND_SERVICE }} \
+            --region=${{ env.REGION }} \
+            --member=allUsers \
+            --role=roles/run.invoker \
+            --platform=managed
 
       - name: Backend service URL
         id: backend
@@ -122,9 +130,17 @@ jobs:
             --image "$FRONTEND_IMAGE" \
             --region ${{ env.REGION }} \
             --platform managed \
-            --allow-unauthenticated \
+            --no-invoker-iam-check \
             --port 8080 \
             --memory 256Mi
+
+      - name: Allow unauthenticated invoker (frontend)
+        run: |
+          gcloud run services add-iam-policy-binding ${{ env.FRONTEND_SERVICE }} \
+            --region=${{ env.REGION }} \
+            --member=allUsers \
+            --role=roles/run.invoker \
+            --platform=managed
 
       - name: Frontend service URL
         run: |

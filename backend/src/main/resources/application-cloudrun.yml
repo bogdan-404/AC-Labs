@@ -1,0 +1,14 @@
+# Activated on Cloud Run via SPRING_PROFILES_ACTIVE=cloudrun (see GitHub Actions deploy).
+spring:
+  flyway:
+    connect-retries: 10
+    connect-retries-interval: 5
+  datasource:
+    hikari:
+      connection-timeout: 30000
+      maximum-pool-size: 5
+
+logging:
+  level:
+    org.flywaydb: INFO
+    org.springframework.jdbc: WARN

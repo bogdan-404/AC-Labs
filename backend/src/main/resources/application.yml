@@ -16,4 +16,6 @@ spring:
     enabled: true
 
 server:
+  # Cloud Run probes PORT; bind all interfaces (not only loopback).
+  address: 0.0.0.0
   port: ${PORT:${SERVER_PORT:8080}}
