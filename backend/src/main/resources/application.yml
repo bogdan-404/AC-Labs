@@ -2,9 +2,10 @@ spring:
   application:
     name: demo-backend
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:labdemo}
-    username: ${DB_USER:labdemo}
-    password: ${DB_PASSWORD:labdemo}
+    # SPRING_DATASOURCE_* (set in Compose/K8s) overrides this; avoids localhost when env is missing in some runtimes
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:labdemo}}
+    username: ${SPRING_DATASOURCE_USERNAME:${DB_USER:labdemo}}
+    password: ${SPRING_DATASOURCE_PASSWORD:${DB_PASSWORD:labdemo}}
   jpa:
     hibernate:
       ddl-auto: validate

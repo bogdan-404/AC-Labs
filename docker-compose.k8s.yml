@@ -1,0 +1,14 @@
+name: ac-k8s-images
+
+services:
+  k8s-backend:
+    build:
+      context: ./backend
+    image: cloud-lab-backend:latest
+
+  k8s-frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE: http://localhost:8080
+    image: cloud-lab-frontend:latest

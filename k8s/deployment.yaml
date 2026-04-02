@@ -1,0 +1,101 @@
+# Apply order (Service before Deployment so DNS name "postgres" exists):
+#   kubectl apply -f k8s/namespace.yaml
+#   kubectl apply -f k8s/service.yaml
+#   kubectl apply -f k8s/deployment.yaml
+#
+# Replicas: postgres=1 (one DB). backend/frontend=3 for Service load-balancing demo.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: cloud-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: labdemo
+            - name: POSTGRES_USER
+              value: labdemo
+            - name: POSTGRES_PASSWORD
+              value: labdemo
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: cloud-lab
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command: ["sh", "-c", "until nc -z postgres 5432; do sleep 1; done"]
+      containers:
+        - name: backend
+          image: cloud-lab-backend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          env:
+            - name: PORT
+              value: "8080"
+            - name: DB_HOST
+              value: postgres
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_NAME
+              value: labdemo
+            - name: DB_USER
+              value: labdemo
+            - name: DB_PASSWORD
+              value: labdemo
+            - name: SPRING_DATASOURCE_URL
+              value: jdbc:postgresql://postgres:5432/labdemo
+            - name: SPRING_DATASOURCE_USERNAME
+              value: labdemo
+            - name: SPRING_DATASOURCE_PASSWORD
+              value: labdemo
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: cloud-lab
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: cloud-lab-frontend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080

@@ -27,6 +27,9 @@ services:
       DB_NAME: labdemo
       DB_USER: labdemo
       DB_PASSWORD: labdemo
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/labdemo
+      SPRING_DATASOURCE_USERNAME: labdemo
+      SPRING_DATASOURCE_PASSWORD: labdemo
     depends_on:
       postgres:
         condition: service_healthy
