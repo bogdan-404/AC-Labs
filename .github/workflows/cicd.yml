@@ -1,18 +1,27 @@
 # Cloud Run deploy (backend → frontend with correct API URL).
 #
-# One-time GCP (CLI or console):
-#   gcloud services enable run.googleapis.com artifactregistry.googleapis.com
-#   gcloud artifacts repositories create lab-docker --repository-format=docker --location=REGION
+# One-time as project Owner (GitHub SA cannot enable APIs — needs Service Usage Admin):
+#   APIs → Library → enable for this project:
+#     - Cloud Resource Manager API
+#     - Service Usage API
+#     - Artifact Registry API
+#     - Cloud Run API
+#   Then create Docker repo (or let the workflow create it if SA has Artifact Registry Admin):
+#     gcloud artifacts repositories create lab-docker --repository-format=docker --location=REGION
 #
-# GitHub repo → Settings → Secrets and variables → Actions:
-#   GCP_SA_KEY            — JSON key for a service account with roles:
-#                           Artifact Registry Writer, Cloud Run Admin, Service Account User
-#   GCP_PROJECT_ID        — e.g. my-gcp-project
-#   SPRING_DATASOURCE_URL — jdbc:postgresql://HOST:5432/labdemo (Postgres must allow Cloud Run egress IPs, or use Cloud SQL + connector)
-#   SPRING_DATASOURCE_USERNAME
-#   SPRING_DATASOURCE_PASSWORD
+# GitHub → Settings → Secrets → Actions:
+#   GCP_SA_KEY              — full JSON key for deploy SA
+#   GCP_PROJECT_ID        — project id string (e.g. ac-labs-492118), not only the numeric project number
+#   SPRING_DATASOURCE_URL / USERNAME / PASSWORD — Postgres must accept connections from the
+#   internet (or use Cloud SQL + connector). Managed DBs often need ?sslmode=require on the URL.
+#   If deploy fails “failed to listen on PORT”, open the Logs URL in the error — usually DB
+#   connection / Flyway. IAM “allUsers” warning: run add-iam-policy-binding (see Cloud Run docs).
 #
-# Change REGION here if your Artifact Registry / Run region differs.
+# IAM on the deploy service account (example):
+#   roles/run.admin, roles/artifactregistry.writer, roles/iam.serviceAccountUser
+#   (+ roles/artifactregistry.admin if the workflow should create the lab-docker repo)
+#
+# Change REGION if needed.
 name: CI/CD — Cloud Run
 
 on:
@@ -55,13 +64,6 @@ jobs:
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
 
-      - name: Set gcloud project (avoids empty default)
-        run: gcloud config set project "$GCP_PROJECT_ID"
-
-      # Non-interactive: needs Service Usage Admin on the SA, or enable APIs once in Console.
-      - name: Enable Artifact Registry & Cloud Run APIs
-        run: gcloud services enable artifactregistry.googleapis.com run.googleapis.com
-
       - name: Artifact Registry (create if missing)
         run: |
           gcloud artifacts repositories describe ${{ env.AR_REPO }} --location=${{ env.REGION }} \
@@ -92,8 +94,10 @@ jobs:
             --platform managed \
             --allow-unauthenticated \
             --port 8080 \
-            --memory 512Mi \
-            --set-env-vars "^##^SPRING_DATASOURCE_URL=${SPRING_DATASOURCE_URL}##^SPRING_DATASOURCE_USERNAME=${SPRING_DATASOURCE_USERNAME}##^SPRING_DATASOURCE_PASSWORD=${SPRING_DATASOURCE_PASSWORD}"
+            --cpu 1 \
+            --memory 1Gi \
+            --cpu-boost \
+            --set-env-vars "^##^SPRING_DATASOURCE_URL=${SPRING_DATASOURCE_URL}##^SPRING_DATASOURCE_USERNAME=${SPRING_DATASOURCE_USERNAME}##^SPRING_DATASOURCE_PASSWORD=${SPRING_DATASOURCE_PASSWORD}##^JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=75.0"
 
       - name: Backend service URL
         id: backend
