@@ -14,8 +14,10 @@
 #   GCP_PROJECT_ID        — project id string (e.g. ac-labs-492118), not only the numeric project number
 #   SPRING_DATASOURCE_URL / USERNAME / PASSWORD — Postgres must accept connections from the
 #   internet (or use Cloud SQL + connector). Managed DBs often need ?sslmode=require on the URL.
-#   If deploy fails “failed to listen on PORT”, open the Logs URL in the error — usually DB
-#   connection / Flyway. IAM “allUsers” warning: run add-iam-policy-binding (see Cloud Run docs).
+#   If deploy fails “failed to listen on PORT”, open the Logs URL — usually DB / Flyway.
+#   Deploy does NOT set public access (no setIamPolicy on the CI SA). To open the app in a
+#   browser without auth, once as project Owner: Cloud Run → service → Security → Allow
+#   unauthenticated invocations (or grant roles/run.admin to the deploy SA and use --allow-unauthenticated).
 #
 # IAM on the deploy service account (example):
 #   roles/run.admin, roles/artifactregistry.writer, roles/iam.serviceAccountUser
@@ -92,20 +94,11 @@ jobs:
             --image "$BACKEND_IMAGE" \
             --region ${{ env.REGION }} \
             --platform managed \
-            --no-invoker-iam-check \
             --port 8080 \
             --cpu 1 \
             --memory 1Gi \
             --cpu-boost \
             --set-env-vars "^##^SPRING_PROFILES_ACTIVE=cloudrun##^SPRING_DATASOURCE_URL=${SPRING_DATASOURCE_URL}##^SPRING_DATASOURCE_USERNAME=${SPRING_DATASOURCE_USERNAME}##^SPRING_DATASOURCE_PASSWORD=${SPRING_DATASOURCE_PASSWORD}##^JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=75.0"
-
-      - name: Allow unauthenticated invoker (backend)
-        run: |
-          gcloud run services add-iam-policy-binding ${{ env.BACKEND_SERVICE }} \
-            --region=${{ env.REGION }} \
-            --member=allUsers \
-            --role=roles/run.invoker \
-            --platform=managed
 
       - name: Backend service URL
         id: backend
@@ -130,21 +123,12 @@ jobs:
             --image "$FRONTEND_IMAGE" \
             --region ${{ env.REGION }} \
             --platform managed \
-            --no-invoker-iam-check \
             --port 8080 \
             --memory 256Mi
-
-      - name: Allow unauthenticated invoker (frontend)
-        run: |
-          gcloud run services add-iam-policy-binding ${{ env.FRONTEND_SERVICE }} \
-            --region=${{ env.REGION }} \
-            --member=allUsers \
-            --role=roles/run.invoker \
-            --platform=managed
 
       - name: Frontend service URL
         run: |
           URL=$(gcloud run services describe ${{ env.FRONTEND_SERVICE }} --region ${{ env.REGION }} --format 'value(status.url)')
           echo "### Cloud Run URLs" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Frontend (open in browser):** $URL" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Backend API:** ${{ steps.backend.outputs.url }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Frontend:** $URL (requires auth until you allow unauthenticated in Console)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Backend:** ${{ steps.backend.outputs.url }} (same)" >> "$GITHUB_STEP_SUMMARY"
