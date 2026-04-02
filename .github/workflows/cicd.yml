@@ -90,15 +90,18 @@ jobs:
           SPRING_DATASOURCE_USERNAME: ${{ secrets.SPRING_DATASOURCE_USERNAME }}
           SPRING_DATASOURCE_PASSWORD: ${{ secrets.SPRING_DATASOURCE_PASSWORD }}
         run: |
+          # Long TCP startup probe: Java + Flyway need time; default probe can kill the revision early.
+          # If this still fails, revision logs almost always show Postgres/Flyway (wrong URL, SSL, firewall).
           gcloud run deploy ${{ env.BACKEND_SERVICE }} \
             --image "$BACKEND_IMAGE" \
             --region ${{ env.REGION }} \
             --platform managed \
             --port 8080 \
             --cpu 1 \
-            --memory 1Gi \
+            --memory 2Gi \
             --cpu-boost \
-            --set-env-vars "^##^SPRING_PROFILES_ACTIVE=cloudrun##^SPRING_DATASOURCE_URL=${SPRING_DATASOURCE_URL}##^SPRING_DATASOURCE_USERNAME=${SPRING_DATASOURCE_USERNAME}##^SPRING_DATASOURCE_PASSWORD=${SPRING_DATASOURCE_PASSWORD}##^JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=75.0"
+            --startup-probe=initialDelaySeconds=10,timeoutSeconds=10,periodSeconds=10,failureThreshold=23,tcpSocket.port=8080 \
+            --set-env-vars "^##^SPRING_PROFILES_ACTIVE=cloudrun##^SPRING_DATASOURCE_URL=${SPRING_DATASOURCE_URL}##^SPRING_DATASOURCE_USERNAME=${SPRING_DATASOURCE_USERNAME}##^SPRING_DATASOURCE_PASSWORD=${SPRING_DATASOURCE_PASSWORD}##^JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=70.0"
 
       - name: Backend service URL
         id: backend
