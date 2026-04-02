@@ -1,8 +1,9 @@
-# Build on glibc (bookworm): Rollup/Vite on Alpine+musl+ARM often misses @rollup/rollup-linux-arm64-musl (npm optional-deps bug).
+# Install deps without the host's package-lock: locks pin optional Rollup binaries to the OS that ran
+# `npm install` (e.g. darwin). Inside Linux/ARM we need a fresh `npm install` so @rollup/rollup-linux-arm64-gnu is pulled.
 FROM node:22-bookworm-slim AS build
 WORKDIR /app
-COPY package.json package-lock.json* ./
-RUN npm ci 2>/dev/null || npm install
+COPY package.json ./
+RUN npm install
 COPY . .
 ARG VITE_API_BASE=http://localhost:8080
 ENV VITE_API_BASE=$VITE_API_BASE
