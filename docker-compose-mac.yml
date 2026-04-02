@@ -1,0 +1,13 @@
+# Apple Silicon (M1 / M2 / M3): pin ARM64 so builds run natively (no amd64 emulation).
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose-mac.yml up --build
+#
+# Intel Mac: use only docker-compose.yml (omit this file).
+
+services:
+  postgres:
+    platform: linux/arm64
+  backend:
+    platform: linux/arm64
+  frontend:
+    platform: linux/arm64
