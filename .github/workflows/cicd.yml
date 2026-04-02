@@ -10,11 +10,11 @@
 #     gcloud artifacts repositories create lab-docker --repository-format=docker --location=REGION
 #
 # GitHub → Settings → Secrets → Actions:
-#   GCP_SA_KEY              — full JSON key for deploy SA
-#   GCP_PROJECT_ID        — project id string (e.g. ac-labs-492118), not only the numeric project number
-#   SPRING_DATASOURCE_URL / USERNAME / PASSWORD — Postgres must accept connections from the
-#   internet (or use Cloud SQL + connector). Managed DBs often need ?sslmode=require on the URL.
-#   If deploy fails “failed to listen on PORT”, open the Logs URL — usually DB / Flyway.
+#   GCP_SA_KEY, GCP_PROJECT_ID
+#
+# Backend on Cloud Run uses profiles demo+cloudrun = embedded H2 (no external Postgres). Data is
+# ephemeral. To use Postgres instead: change deploy step to SPRING_PROFILES_ACTIVE=cloudrun and pass
+# SPRING_DATASOURCE_URL / USERNAME / PASSWORD (DB must be reachable from Cloud Run, often ?sslmode=require).
 #   Deploy does NOT set public access (no setIamPolicy on the CI SA). To open the app in a
 #   browser without auth, once as project Owner: Cloud Run → service → Security → Allow
 #   unauthenticated invocations (or grant roles/run.admin to the deploy SA and use --allow-unauthenticated).
@@ -83,15 +83,9 @@ jobs:
           docker push "$IMG"
           echo "BACKEND_IMAGE=$IMG" >> "$GITHUB_ENV"
 
-      # Use alternate delimiter so JDBC URLs can contain commas; avoid commas in password or URL-encode.
       - name: Deploy backend to Cloud Run
-        env:
-          SPRING_DATASOURCE_URL: ${{ secrets.SPRING_DATASOURCE_URL }}
-          SPRING_DATASOURCE_USERNAME: ${{ secrets.SPRING_DATASOURCE_USERNAME }}
-          SPRING_DATASOURCE_PASSWORD: ${{ secrets.SPRING_DATASOURCE_PASSWORD }}
         run: |
-          # Long TCP startup probe: Java + Flyway need time; default probe can kill the revision early.
-          # If this still fails, revision logs almost always show Postgres/Flyway (wrong URL, SSL, firewall).
+          # demo+cloudrun = in-memory H2 (no Postgres). Long TCP probe for slow JVM cold start.
           gcloud run deploy ${{ env.BACKEND_SERVICE }} \
             --image "$BACKEND_IMAGE" \
             --region ${{ env.REGION }} \
@@ -101,7 +95,7 @@ jobs:
             --memory 2Gi \
             --cpu-boost \
             --startup-probe=initialDelaySeconds=10,timeoutSeconds=10,periodSeconds=10,failureThreshold=23,tcpSocket.port=8080 \
-            --set-env-vars "^##^SPRING_PROFILES_ACTIVE=cloudrun##^SPRING_DATASOURCE_URL=${SPRING_DATASOURCE_URL}##^SPRING_DATASOURCE_USERNAME=${SPRING_DATASOURCE_USERNAME}##^SPRING_DATASOURCE_PASSWORD=${SPRING_DATASOURCE_PASSWORD}##^JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=70.0"
+            --set-env-vars "^##^SPRING_PROFILES_ACTIVE=demo,cloudrun##^JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=70.0"
 
       - name: Backend service URL
         id: backend
