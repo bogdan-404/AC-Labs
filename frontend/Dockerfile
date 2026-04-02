@@ -1,4 +1,5 @@
-FROM node:22-alpine AS build
+# Build on glibc (bookworm): Rollup/Vite on Alpine+musl+ARM often misses @rollup/rollup-linux-arm64-musl (npm optional-deps bug).
+FROM node:22-bookworm-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci 2>/dev/null || npm install
