@@ -1,0 +1,113 @@
+# Cloud Run deploy (backend → frontend with correct API URL).
+#
+# One-time GCP (CLI or console):
+#   gcloud services enable run.googleapis.com artifactregistry.googleapis.com
+#   gcloud artifacts repositories create lab-docker --repository-format=docker --location=REGION
+#
+# GitHub repo → Settings → Secrets and variables → Actions:
+#   GCP_SA_KEY            — JSON key for a service account with roles:
+#                           Artifact Registry Writer, Cloud Run Admin, Service Account User
+#   GCP_PROJECT_ID        — e.g. my-gcp-project
+#   SPRING_DATASOURCE_URL — jdbc:postgresql://HOST:5432/labdemo (Postgres must allow Cloud Run egress IPs, or use Cloud SQL + connector)
+#   SPRING_DATASOURCE_USERNAME
+#   SPRING_DATASOURCE_PASSWORD
+#
+# Change REGION here if your Artifact Registry / Run region differs.
+name: CI/CD — Cloud Run
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REGION: europe-west1
+  AR_REPO: lab-docker
+  BACKEND_SERVICE: lab-backend
+  FRONTEND_SERVICE: lab-frontend
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Auth to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Artifact Registry (create if missing)
+        run: |
+          gcloud artifacts repositories describe ${{ env.AR_REPO }} --location=${{ env.REGION }} \
+            || gcloud artifacts repositories create ${{ env.AR_REPO }} \
+                 --repository-format=docker --location=${{ env.REGION }} --description="Lab images"
+
+      - name: Docker auth for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Build & push backend image
+        run: |
+          REG="${{ env.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.AR_REPO }}"
+          IMG="$REG/backend:${{ github.sha }}"
+          docker build -t "$IMG" ./backend
+          docker push "$IMG"
+          echo "BACKEND_IMAGE=$IMG" >> "$GITHUB_ENV"
+
+      # Use alternate delimiter so JDBC URLs can contain commas; avoid commas in password or URL-encode.
+      - name: Deploy backend to Cloud Run
+        env:
+          SPRING_DATASOURCE_URL: ${{ secrets.SPRING_DATASOURCE_URL }}
+          SPRING_DATASOURCE_USERNAME: ${{ secrets.SPRING_DATASOURCE_USERNAME }}
+          SPRING_DATASOURCE_PASSWORD: ${{ secrets.SPRING_DATASOURCE_PASSWORD }}
+        run: |
+          gcloud run deploy ${{ env.BACKEND_SERVICE }} \
+            --image "$BACKEND_IMAGE" \
+            --region ${{ env.REGION }} \
+            --platform managed \
+            --allow-unauthenticated \
+            --port 8080 \
+            --memory 512Mi \
+            --set-env-vars "^##^SPRING_DATASOURCE_URL=${SPRING_DATASOURCE_URL}##^SPRING_DATASOURCE_USERNAME=${SPRING_DATASOURCE_USERNAME}##^SPRING_DATASOURCE_PASSWORD=${SPRING_DATASOURCE_PASSWORD}"
+
+      - name: Backend service URL
+        id: backend
+        run: |
+          URL=$(gcloud run services describe ${{ env.BACKEND_SERVICE }} --region ${{ env.REGION }} --format 'value(status.url)')
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "Backend URL: $URL"
+
+      - name: Build & push frontend image
+        run: |
+          REG="${{ env.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.AR_REPO }}"
+          IMG="$REG/frontend:${{ github.sha }}"
+          docker build \
+            --build-arg "VITE_API_BASE=${{ steps.backend.outputs.url }}" \
+            -t "$IMG" ./frontend
+          docker push "$IMG"
+          echo "FRONTEND_IMAGE=$IMG" >> "$GITHUB_ENV"
+
+      - name: Deploy frontend to Cloud Run
+        run: |
+          gcloud run deploy ${{ env.FRONTEND_SERVICE }} \
+            --image "$FRONTEND_IMAGE" \
+            --region ${{ env.REGION }} \
+            --platform managed \
+            --allow-unauthenticated \
+            --port 8080 \
+            --memory 256Mi
+
+      - name: Frontend service URL
+        run: |
+          URL=$(gcloud run services describe ${{ env.FRONTEND_SERVICE }} --region ${{ env.REGION }} --format 'value(status.url)')
+          echo "### Cloud Run URLs" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Frontend (open in browser):** $URL" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Backend API:** ${{ steps.backend.outputs.url }}" >> "$GITHUB_STEP_SUMMARY"
