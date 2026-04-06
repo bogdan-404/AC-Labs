@@ -15,9 +15,8 @@
 # Backend on Cloud Run uses profiles demo+cloudrun = embedded H2 (no external Postgres). Data is
 # ephemeral. To use Postgres instead: change deploy step to SPRING_PROFILES_ACTIVE=cloudrun and pass
 # SPRING_DATASOURCE_URL / USERNAME / PASSWORD (DB must be reachable from Cloud Run, often ?sslmode=require).
-#   Deploy does NOT set public access (no setIamPolicy on the CI SA). To open the app in a
-#   browser without auth, once as project Owner: Cloud Run → service → Security → Allow
-#   unauthenticated invocations (or grant roles/run.admin to the deploy SA and use --allow-unauthenticated).
+#   Deploy sets public access with --allow-unauthenticated. Deploy SA must have
+#   permission to set IAM policy on Cloud Run services (roles/run.admin).
 #
 # IAM on the deploy service account (example):
 #   roles/run.admin, roles/artifactregistry.writer, roles/iam.serviceAccountUser
@@ -90,6 +89,7 @@ jobs:
             --image "$BACKEND_IMAGE" \
             --region ${{ env.REGION }} \
             --platform managed \
+            --allow-unauthenticated \
             --port 8080 \
             --cpu 1 \
             --memory 2Gi \
@@ -120,6 +120,7 @@ jobs:
             --image "$FRONTEND_IMAGE" \
             --region ${{ env.REGION }} \
             --platform managed \
+            --allow-unauthenticated \
             --port 8080 \
             --memory 256Mi
 
@@ -127,5 +128,5 @@ jobs:
         run: |
           URL=$(gcloud run services describe ${{ env.FRONTEND_SERVICE }} --region ${{ env.REGION }} --format 'value(status.url)')
           echo "### Cloud Run URLs" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Frontend:** $URL (requires auth until you allow unauthenticated in Console)" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Backend:** ${{ steps.backend.outputs.url }} (same)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Frontend:** $URL" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Backend:** ${{ steps.backend.outputs.url }}" >> "$GITHUB_STEP_SUMMARY"
