@@ -1,15 +1,3 @@
-# GKE Autopilot: backend + frontend Deployments, frontend exposed via LoadBalancer.
-#
-# One-time (gcloud as project Owner):
-#   gcloud services enable container.googleapis.com
-#   gcloud container clusters create-auto lab-autopilot --region=europe-west1 --project=YOUR_PROJECT
-#
-# Node default SA must pull from Artifact Registry (same project usually works). If ImagePullBackOff:
-#   grant roles/artifactregistry.reader to the GKE node service account.
-#
-# GitHub Actions secrets: GCP_SA_KEY, GCP_PROJECT_ID (same as Cloud Run workflow).
-# Cluster name must match create-auto (default: lab-autopilot). Edit workflow if yours differs.
-#
 name: Deploy — GKE Autopilot (backend + frontend)
 
 on:
