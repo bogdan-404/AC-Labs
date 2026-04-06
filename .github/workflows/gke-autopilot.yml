@@ -26,6 +26,8 @@ on:
 env:
   REGION: europe-west1
   AR_REPO: lab-docker
+  GKE_CLUSTER_NAME: ${{ vars.GKE_CLUSTER_NAME || 'autopilot-cluster-1' }}
+  GKE_LOCATION: ${{ vars.GKE_LOCATION || 'europe-west1' }}
   USE_GKE_GCLOUD_AUTH_PLUGIN: "True"
 
 jobs:
@@ -83,11 +85,20 @@ jobs:
           docker push "$IMG"
           echo "FRONTEND_IMAGE=$IMG" >> "$GITHUB_ENV"
 
+      - name: Validate GKE cluster exists
+        run: |
+          if ! gcloud container clusters describe "${{ env.GKE_CLUSTER_NAME }}" --location "${{ env.GKE_LOCATION }}" --project "${GCP_PROJECT_ID}" >/dev/null 2>&1; then
+            echo "::error::Cluster '${{ env.GKE_CLUSTER_NAME }}' not found in location '${{ env.GKE_LOCATION }}' for project '${GCP_PROJECT_ID}'."
+            echo "Available clusters:"
+            gcloud container clusters list --project "${GCP_PROJECT_ID}" || true
+            exit 1
+          fi
+
       - name: Get GKE credentials
         uses: google-github-actions/get-gke-credentials@v2
         with:
-          cluster_name: lab-autopilot
-          location: ${{ env.REGION }}
+          cluster_name: ${{ env.GKE_CLUSTER_NAME }}
+          location: ${{ env.GKE_LOCATION }}
 
       - name: Apply manifests
         run: |
