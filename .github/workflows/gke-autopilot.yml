@@ -1,0 +1,114 @@
+# GKE Autopilot: backend + frontend Deployments, frontend exposed via LoadBalancer.
+#
+# One-time (gcloud as project Owner):
+#   gcloud services enable container.googleapis.com
+#   gcloud container clusters create-auto lab-autopilot --region=europe-west1 --project=YOUR_PROJECT
+#
+# Node default SA must pull from Artifact Registry (same project usually works). If ImagePullBackOff:
+#   grant roles/artifactregistry.reader to the GKE node service account.
+#
+# GitHub Actions secrets: GCP_SA_KEY, GCP_PROJECT_ID (same as Cloud Run workflow).
+# Cluster name must match create-auto (default: lab-autopilot). Edit workflow if yours differs.
+#
+name: Deploy — GKE Autopilot (backend + frontend)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/gke-autopilot.yml'
+      - 'backend/**'
+      - 'frontend/**'
+      - 'gke/autopilot/**'
+  workflow_dispatch:
+
+env:
+  REGION: europe-west1
+  AR_REPO: lab-docker
+  USE_GKE_GCLOUD_AUTH_PLUGIN: "True"
+
+jobs:
+  gke:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require GCP_PROJECT_ID
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        run: |
+          test -n "$GCP_PROJECT_ID" || (echo "::error::Set GCP_PROJECT_ID secret" && exit 1)
+          echo "GCP_PROJECT_ID=$GCP_PROJECT_ID" >> "$GITHUB_ENV"
+
+      - name: Auth to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          install_components: gke-gcloud-auth-plugin
+
+      - name: Artifact Registry (create if missing)
+        run: |
+          gcloud artifacts repositories describe ${{ env.AR_REPO }} --location=${{ env.REGION }} \
+            || gcloud artifacts repositories create ${{ env.AR_REPO }} \
+                 --repository-format=docker --location=${{ env.REGION }} --description="Lab images"
+
+      - name: Docker auth for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Build & push backend image
+        run: |
+          REG="${{ env.REGION }}-docker.pkg.dev/${GCP_PROJECT_ID}/${{ env.AR_REPO }}"
+          IMG="$REG/backend:${{ github.sha }}"
+          docker build -t "$IMG" ./backend
+          docker push "$IMG"
+          echo "BACKEND_IMAGE=$IMG" >> "$GITHUB_ENV"
+
+      - name: Build & push frontend image
+        run: |
+          REG="${{ env.REGION }}-docker.pkg.dev/${GCP_PROJECT_ID}/${{ env.AR_REPO }}"
+          IMG="$REG/frontend:${{ github.sha }}"
+          docker build -t "$IMG" --build-arg VITE_API_BASE=/api ./frontend
+          docker push "$IMG"
+          echo "FRONTEND_IMAGE=$IMG" >> "$GITHUB_ENV"
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: lab-autopilot
+          location: ${{ env.REGION }}
+
+      - name: Apply manifests
+        run: |
+          kubectl apply -f gke/autopilot/namespace.yaml
+          kubectl apply -f gke/autopilot/service.yaml
+          sed -e "s|BACKEND_IMAGE_PLACEHOLDER|$BACKEND_IMAGE|g" \
+              -e "s|FRONTEND_IMAGE_PLACEHOLDER|$FRONTEND_IMAGE|g" \
+              gke/autopilot/deployment.yaml | kubectl apply -f -
+          kubectl rollout status deployment/api -n gke-lab --timeout=300s
+          kubectl rollout status deployment/frontend -n gke-lab --timeout=300s
+
+      - name: Frontend LoadBalancer address
+        run: |
+          echo "Waiting for external IP (can take a few minutes)..."
+          for i in $(seq 1 60); do
+            IP=$(kubectl get svc frontend -n gke-lab -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+            if [ -n "$IP" ]; then
+              echo "Frontend (via LB): http://${IP}/"
+              echo "### GKE Autopilot" >> "$GITHUB_STEP_SUMMARY"
+              echo "- **Frontend:** http://${IP}/" >> "$GITHUB_STEP_SUMMARY"
+              echo "- **Backend:** http://${IP}/api/registrations" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::warning::No external IP yet; run: kubectl get svc frontend -n gke-lab"
+          kubectl get svc frontend -n gke-lab

@@ -3,7 +3,7 @@
 #   kubectl apply -f k8s/service.yaml
 #   kubectl apply -f k8s/deployment.yaml
 #
-# Replicas: postgres=1 (one DB). backend/frontend=3 for Service load-balancing demo.
+# Replicas: postgres=1 (one DB). backend=3 and frontend=2 for load-balancing demo.
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -84,7 +84,7 @@ metadata:
   name: frontend
   namespace: cloud-lab
 spec:
-  replicas: 3
+  replicas: 2
   selector:
     matchLabels:
       app: frontend
