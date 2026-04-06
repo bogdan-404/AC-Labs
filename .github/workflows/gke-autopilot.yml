@@ -76,7 +76,10 @@ jobs:
         run: |
           REG="${{ env.REGION }}-docker.pkg.dev/${GCP_PROJECT_ID}/${{ env.AR_REPO }}"
           IMG="$REG/frontend:${{ github.sha }}"
-          docker build -t "$IMG" --build-arg VITE_API_BASE=/api ./frontend
+          docker build -t "$IMG" \
+            --build-arg VITE_API_BASE=/api \
+            --build-arg NGINX_CONF=nginx.gke.conf \
+            ./frontend
           docker push "$IMG"
           echo "FRONTEND_IMAGE=$IMG" >> "$GITHUB_ENV"
 
